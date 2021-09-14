@@ -1,5 +1,7 @@
 # GoDotEnv ![CI](https://github.com/joho/godotenv/workflows/CI/badge.svg) [![Go Report Card](https://goreportcard.com/badge/github.com/joho/godotenv)](https://goreportcard.com/report/github.com/joho/godotenv)
 
+**fork from joho and edit by zing**
+
 A Go (golang) port of the Ruby dotenv project (which loads env vars from a .env file)
 
 From the original Library:
@@ -40,7 +42,7 @@ Then in your Go app you can do something like
 package main
 
 import (
-    "github.com/joho/godotenv"
+    "github.com/zing-dev/godotenv"
     "log"
     "os"
 )

@@ -27,8 +27,7 @@ ENV_FILE_PATHS: comma separated paths to .env files
 COMMAND_ARGS: command and args you want to run
 
 example
-  godotenv -f /path/to/something/.env,/another/path/.env fortune
-`
+  godotenv -f /path/to/something/.env,/another/path/.env fortune`
 	// if no args or -h flag
 	// print usage and return
 	args := flag.Args()

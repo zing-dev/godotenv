@@ -21,12 +21,23 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 )
 
-const doubleQuoteSpecialChars = "\\\n\r\"!$`"
+const (
+	doubleQuoteSpecialChars = "\\\n\r\"!$`"
+)
+
+var FileName = ".env"
+
+var KVFormat = func(k, v string, max byte) string {
+	if d, err := strconv.Atoi(v); err == nil {
+		return fmt.Sprintf(fmt.Sprintf("%%-%ds = %%-%dd", max, max), k, d)
+	} else {
+		return fmt.Sprintf(fmt.Sprintf("%%-%ds = %%-%ds", max, max), k, doubleQuoteEscape(v))
+	}
+}
 
 // Load will read your env file(s) and load them into ENV for this process.
 //
@@ -88,17 +99,40 @@ func Read(filenames ...string) (envMap map[string]string, err error) {
 			return // return early on a spazout
 		}
 
-		for key, value := range individualEnvMap {
-			envMap[key] = value
+		for _, v := range individualEnvMap {
+			envMap[v[0]] = v[1]
 		}
 	}
 
 	return
 }
 
+func Show(filenames ...string) (str string, err error) {
+	filenames = filenamesOrDefault(filenames)
+	for _, filename := range filenames {
+		individualEnvMap, individualErr := readFile(filename)
+
+		if individualErr != nil {
+			err = individualErr
+			return // return early on a spazout
+		}
+
+		max := 0
+		for _, v := range individualEnvMap {
+			if max < len(v[0]) {
+				max = len(v[0])
+			}
+		}
+		for _, v := range individualEnvMap {
+			str += KVFormat(v[0], v[1], byte(max)) + "\n"
+		}
+	}
+	return
+}
+
 // Parse reads an env file from io.Reader, returning a map of keys and values.
-func Parse(r io.Reader) (envMap map[string]string, err error) {
-	envMap = make(map[string]string)
+func Parse(r io.Reader) (m [][2]string, err error) {
+	envMap := make(map[string]string)
 
 	var lines []string
 	scanner := bufio.NewScanner(r)
@@ -119,13 +153,14 @@ func Parse(r io.Reader) (envMap map[string]string, err error) {
 				return
 			}
 			envMap[key] = value
+			m = append(m, [2]string{key, value})
 		}
 	}
 	return
 }
 
 //Unmarshal reads an env file from a string, returning a map of keys and values.
-func Unmarshal(str string) (envMap map[string]string, err error) {
+func Unmarshal(str string) (envMap [][2]string, err error) {
 	return Parse(strings.NewReader(str))
 }
 
@@ -134,7 +169,7 @@ func Unmarshal(str string) (envMap map[string]string, err error) {
 //
 // Simply hooks up os.Stdin/err/out to the command and calls Run()
 //
-// If you want more fine grained control over your command it's recommended
+// If you want more fine-grained control over your command it's recommended
 // that you use `Load()` or `Read()` and the `os/exec` package yourself.
 func Exec(filenames []string, cmd string, cmdArgs []string) error {
 	Load(filenames...)
@@ -147,17 +182,36 @@ func Exec(filenames []string, cmd string, cmdArgs []string) error {
 }
 
 // Write serializes the given environment and writes it to a file
-func Write(envMap map[string]string, filename string) error {
+func Write(envMap [][2]string, filename string) error {
 	content, err := Marshal(envMap)
 	if err != nil {
 		return err
 	}
+	return write(strings.Split(content, "\n"), filename)
+}
+
+// WriteSlice serializes the given environment and writes it to a file
+func WriteSlice(envSlice [][2]string, filename string) error {
+	lines := make([]string, 0, len(envSlice))
+	max := 0
+	for k := range envSlice {
+		if max < len(envSlice[k][0]) {
+			max = len(envSlice[k][0])
+		}
+	}
+	for _, v := range envSlice {
+		lines = append(lines, KVFormat(v[0], v[1], byte(max)))
+	}
+	return write(lines, filename)
+}
+
+func write(lines []string, filename string) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	_, err = file.WriteString(content + "\n")
+	_, err = file.WriteString(strings.Join(lines, "\n") + "\n")
 	if err != nil {
 		return err
 	}
@@ -167,22 +221,21 @@ func Write(envMap map[string]string, filename string) error {
 
 // Marshal outputs the given environment as a dotenv-formatted environment file.
 // Each line is in the format: KEY="VALUE" where VALUE is backslash-escaped.
-func Marshal(envMap map[string]string) (string, error) {
+func Marshal(envMap [][2]string) (string, error) {
 	lines := make([]string, 0, len(envMap))
-	for k, v := range envMap {
-		if d, err := strconv.Atoi(v); err == nil {
-			lines = append(lines, fmt.Sprintf(`%s=%d`, k, d))
+	for _, v := range envMap {
+		if d, err := strconv.Atoi(v[1]); err == nil {
+			lines = append(lines, fmt.Sprintf(`%s=%d`, v[0], d))
 		} else {
-			lines = append(lines, fmt.Sprintf(`%s="%s"`, k, doubleQuoteEscape(v)))
+			lines = append(lines, fmt.Sprintf(`%s="%s"`, v[0], doubleQuoteEscape(v[1])))
 		}
 	}
-	sort.Strings(lines)
 	return strings.Join(lines, "\n"), nil
 }
 
 func filenamesOrDefault(filenames []string) []string {
 	if len(filenames) == 0 {
-		return []string{".env"}
+		return []string{FileName}
 	}
 	return filenames
 }
@@ -200,16 +253,16 @@ func loadFile(filename string, overload bool) error {
 		currentEnv[key] = true
 	}
 
-	for key, value := range envMap {
-		if !currentEnv[key] || overload {
-			os.Setenv(key, value)
+	for _, value := range envMap {
+		if !currentEnv[value[0]] || overload {
+			os.Setenv(value[0], value[1])
 		}
 	}
 
 	return nil
 }
 
-func readFile(filename string) (envMap map[string]string, err error) {
+func readFile(filename string) (envMap [][2]string, err error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return
@@ -259,7 +312,7 @@ func parseLine(line string, envMap map[string]string) (key string, value string,
 	}
 
 	if len(splitString) != 2 {
-		err = errors.New("Can't separate key from value")
+		err = errors.New("can't separate key from value")
 		return
 	}
 

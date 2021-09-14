@@ -100,17 +100,17 @@ func TestReadPlainEnv(t *testing.T) {
 
 func TestParse(t *testing.T) {
 	envMap, err := Parse(bytes.NewReader([]byte("ONE=1\nTWO='2'\nTHREE = \"3\"")))
-	expectedValues := map[string]string{
-		"ONE":   "1",
-		"TWO":   "2",
-		"THREE": "3",
+	expectedValues := [][2]string{
+		{"ONE", "1"},
+		{"TWO", "2"},
+		{"THREE", "3"},
 	}
 	if err != nil {
 		t.Fatalf("error parsing env: %v", err)
 	}
 	for key, value := range expectedValues {
 		if envMap[key] != value {
-			t.Errorf("expected %s to be %s, got %s", key, value, envMap[key])
+			t.Errorf("expected %s to be %s, got %s", value[0], value[1], envMap[key])
 		}
 	}
 }
@@ -211,47 +211,48 @@ func TestExpanding(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected map[string]string
+		expected [][2]string
 	}{
 		{
 			"expands variables found in values",
 			"FOO=test\nBAR=$FOO",
-			map[string]string{"FOO": "test", "BAR": "test"},
+			[][2]string{
+				{"FOO", "test"}, {"BAR", "test"}},
 		},
 		{
 			"parses variables wrapped in brackets",
 			"FOO=test\nBAR=${FOO}bar",
-			map[string]string{"FOO": "test", "BAR": "testbar"},
+			[][2]string{{"FOO", "test"}, {"BAR", "testbar"}},
 		},
 		{
 			"expands undefined variables to an empty string",
 			"BAR=$FOO",
-			map[string]string{"BAR": ""},
+			[][2]string{{"BAR", ""}},
 		},
 		{
 			"expands variables in double quoted strings",
 			"FOO=test\nBAR=\"quote $FOO\"",
-			map[string]string{"FOO": "test", "BAR": "quote test"},
+			[][2]string{{"FOO", "test"}, {"BAR", "quote test"}},
 		},
 		{
 			"does not expand variables in single quoted strings",
 			"BAR='quote $FOO'",
-			map[string]string{"BAR": "quote $FOO"},
+			[][2]string{{"BAR", "quote $FOO"}},
 		},
 		{
 			"does not expand escaped variables",
 			`FOO="foo\$BAR"`,
-			map[string]string{"FOO": "foo$BAR"},
+			[][2]string{{"FOO", "foo$BAR"}},
 		},
 		{
 			"does not expand escaped variables",
 			`FOO="foo\${BAR}"`,
-			map[string]string{"FOO": "foo${BAR}"},
+			[][2]string{{"FOO", "foo${BAR}"}},
 		},
 		{
 			"does not expand escaped variables",
 			"FOO=test\nBAR=\"foo\\${FOO} ${FOO}\"",
-			map[string]string{"FOO": "test", "BAR": "foo${FOO} test"},
+			[][2]string{{"FOO", "test"}, {"BAR", "foo${FOO} test"}},
 		},
 	}
 
@@ -261,9 +262,13 @@ func TestExpanding(t *testing.T) {
 			if err != nil {
 				t.Errorf("Error: %s", err.Error())
 			}
-			for k, v := range tt.expected {
-				if strings.Compare(env[k], v) != 0 {
-					t.Errorf("Expected: %s, Actual: %s", v, env[k])
+			for _, v := range tt.expected {
+				for _, v2 := range env {
+					if v[0] == v2[0] {
+						if strings.Compare(v[1], v2[1]) != 0 {
+							t.Errorf("Expected: %s, Actual: %s", v, env[0])
+						}
+					}
 				}
 			}
 		})
@@ -444,7 +449,7 @@ func TestWrite(t *testing.T) {
 	// newlines, backslashes, and some other special chars are escaped
 	writeAndCompare(`foo="\n\r\\r!"`, `foo="\n\r\\r\!"`)
 	// lines should be sorted
-	writeAndCompare("foo=bar\nbaz=buzz", "baz=\"buzz\"\nfoo=\"bar\"")
+	writeAndCompare("foo=bar\nbaz=buzz", "foo=\"bar\"\nbaz=\"buzz\"")
 	// integers should not be quoted
 	writeAndCompare(`key="10"`, `key=10`)
 
