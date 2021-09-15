@@ -33,9 +33,9 @@ var FileName = ".env"
 
 var KVFormat = func(k, v string, max byte) string {
 	if d, err := strconv.Atoi(v); err == nil {
-		return fmt.Sprintf(fmt.Sprintf("%%-%ds = %%-%dd", max, max), k, d)
+		return fmt.Sprintf(fmt.Sprintf("%%-%ds = %%-%dd\n", max, max), k, d)
 	} else {
-		return fmt.Sprintf(fmt.Sprintf("%%-%ds = %%-%ds", max, max), k, doubleQuoteEscape(v))
+		return fmt.Sprintf(fmt.Sprintf("%%-%ds = %%-%ds\n", max, max), k, DoubleQuoteEscape(v))
 	}
 }
 
@@ -87,23 +87,27 @@ func Overload(filenames ...string) (err error) {
 
 // Read all env (with same file loading semantics as Load) but return values as
 // a map rather than automatically writing values into env
-func Read(filenames ...string) (envMap map[string]string, err error) {
+func Read(filenames ...string) (ev [][2]string, err error) {
 	filenames = filenamesOrDefault(filenames)
-	envMap = make(map[string]string)
-
 	for _, filename := range filenames {
-		individualEnvMap, individualErr := readFile(filename)
-
-		if individualErr != nil {
-			err = individualErr
-			return // return early on a spazout
-		}
-
-		for _, v := range individualEnvMap {
-			envMap[v[0]] = v[1]
+		ev, err = readFile(filename)
+		if err != nil {
+			return
 		}
 	}
+	return
+}
 
+func Range(ev [][2]string, format func(k, v string, max byte) string) (str string) {
+	max := 0
+	for _, v := range ev {
+		if max < len(v[0]) {
+			max = len(v[0])
+		}
+	}
+	for _, v := range ev {
+		str += format(v[0], v[1], byte(max))
+	}
 	return
 }
 
@@ -111,22 +115,12 @@ func Read(filenames ...string) (envMap map[string]string, err error) {
 func Show(filenames ...string) (str string, err error) {
 	filenames = filenamesOrDefault(filenames)
 	for _, filename := range filenames {
-		individualEnvMap, individualErr := readFile(filename)
-
+		ev, individualErr := readFile(filename)
 		if individualErr != nil {
 			err = individualErr
 			return // return early on a spazout
 		}
-
-		max := 0
-		for _, v := range individualEnvMap {
-			if max < len(v[0]) {
-				max = len(v[0])
-			}
-		}
-		for _, v := range individualEnvMap {
-			str += KVFormat(v[0], v[1], byte(max)) + "\n"
-		}
+		str = Range(ev, KVFormat)
 	}
 	return
 }
@@ -187,11 +181,7 @@ func Exec(filenames []string, cmd string, cmdArgs []string) error {
 
 // Write serializes the given environment and writes it to a file
 func Write(ev [][2]string, filename string) error {
-	content, err := Marshal(ev)
-	if err != nil {
-		return err
-	}
-	return write(content, filename)
+	return write(Marshal(ev), filename)
 }
 
 // inner write
@@ -212,18 +202,8 @@ func write(content, filename string) error {
 
 // Marshal outputs the given environment as a dotenv-formatted environment file.
 // Each line is in the format: KEY="VALUE" where VALUE is backslash-escaped.
-func Marshal(ev [][2]string) (string, error) {
-	lines := make([]string, 0, len(ev))
-	max := 0
-	for k := range ev {
-		if max < len(ev[k][0]) {
-			max = len(ev[k][0])
-		}
-	}
-	for _, v := range ev {
-		lines = append(lines, KVFormat(v[0], v[1], byte(max)))
-	}
-	return strings.Join(lines, "\n"), nil
+func Marshal(ev [][2]string) string {
+	return Range(ev, KVFormat)
 }
 
 func filenamesOrDefault(filenames []string) []string {
@@ -399,7 +379,7 @@ func isIgnoredLine(line string) bool {
 	return len(trimmedLine) == 0 || strings.HasPrefix(trimmedLine, "#")
 }
 
-func doubleQuoteEscape(line string) string {
+func DoubleQuoteEscape(line string) string {
 	for _, c := range doubleQuoteSpecialChars {
 		toReplace := "\\" + string(c)
 		if c == '\n' {

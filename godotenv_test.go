@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -23,7 +22,7 @@ func loadEnvAndCompareValues(t *testing.T, loader func(files ...string) error, e
 	os.Clearenv()
 
 	for k, v := range presets {
-		os.Setenv(k, v)
+		_ = os.Setenv(k, v)
 	}
 
 	err := loader(envFileName)
@@ -72,14 +71,14 @@ func TestOverloadFileNotFound(t *testing.T) {
 
 func TestReadPlainEnv(t *testing.T) {
 	envFileName := "fixtures/plain.env"
-	expectedValues := map[string]string{
-		"OPTION_A": "1",
-		"OPTION_B": "2",
-		"OPTION_C": "3",
-		"OPTION_D": "4",
-		"OPTION_E": "5",
-		"OPTION_F": "",
-		"OPTION_G": "",
+	expectedValues := [][2]string{
+		{"OPTION_A", "1"},
+		{"OPTION_B", "2"},
+		{"OPTION_C", "3"},
+		{"OPTION_D", "4"},
+		{"OPTION_E", "5"},
+		{"OPTION_F", ""},
+		{"OPTION_G", ""},
 	}
 
 	envMap, err := Read(envFileName)
@@ -278,7 +277,7 @@ func TestExpanding(t *testing.T) {
 
 func TestActualEnvVarsAreLeftAlone(t *testing.T) {
 	os.Clearenv()
-	os.Setenv("OPTION_A", "actualenv")
+	_ = os.Setenv("OPTION_A", "actualenv")
 	_ = Load("fixtures/plain.env")
 
 	if os.Getenv("OPTION_A") != "actualenv" {
@@ -429,55 +428,6 @@ func TestErrorParsing(t *testing.T) {
 	}
 }
 
-func TestWrite(t *testing.T) {
-	writeAndCompare := func(env string, expected string) {
-		envMap, _ := Unmarshal(env)
-		actual, _ := Marshal(envMap)
-		if expected != actual {
-			t.Errorf("Expected '%v' (%v) to write as '%v', got '%v' instead.", env, envMap, expected, actual)
-		}
-	}
-	//just test some single lines to show the general idea
-	//TestRoundtrip makes most of the good assertions
-
-	//values are always double-quoted
-	writeAndCompare(`key=value`, `key="value"`)
-	//double-quotes are escaped
-	writeAndCompare(`key=va"lu"e`, `key="va\"lu\"e"`)
-	//but single quotes are left alone
-	writeAndCompare(`key=va'lu'e`, `key="va'lu'e"`)
-	// newlines, backslashes, and some other special chars are escaped
-	writeAndCompare(`foo="\n\r\\r!"`, `foo="\n\r\\r\!"`)
-	// lines should be sorted
-	writeAndCompare("foo=bar\nbaz=buzz", "foo=\"bar\"\nbaz=\"buzz\"")
-	// integers should not be quoted
-	writeAndCompare(`key="10"`, `key=10`)
-
-}
-
-func TestRoundtrip(t *testing.T) {
-	fixtures := []string{"equals.env", "exported.env", "plain.env", "quoted.env"}
-	for _, fixture := range fixtures {
-		fixtureFilename := fmt.Sprintf("fixtures/%s", fixture)
-		env, err := readFile(fixtureFilename)
-		if err != nil {
-			t.Errorf("Expected '%s' to read without error (%v)", fixtureFilename, err)
-		}
-		rep, err := Marshal(env)
-		if err != nil {
-			t.Errorf("Expected '%s' to Marshal (%v)", fixtureFilename, err)
-		}
-		roundtripped, err := Unmarshal(rep)
-		if err != nil {
-			t.Errorf("Expected '%s' to Mashal and Unmarshal (%v)", fixtureFilename, err)
-		}
-		if !reflect.DeepEqual(env, roundtripped) {
-			t.Errorf("Expected '%s' to roundtrip as '%v', got '%v' instead", fixtureFilename, env, roundtripped)
-		}
-
-	}
-}
-
 func TestWriteIntoFile(t *testing.T) {
 	err := Write([][2]string{
 		{"k1", "v1"},
@@ -504,4 +454,22 @@ func TestShow(t *testing.T) {
 		t.Fatalf("show err: %s", err)
 	}
 	fmt.Println(str)
+}
+
+func TestUnmarshal(t *testing.T) {
+	ev, err := Read("./fixtures/write" + FileName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst, err := Unmarshal(Marshal(ev))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k := range ev {
+		if ev[k][0] == dst[k][0] {
+			if ev[k][1] != dst[k][1] {
+				t.Errorf("%s:%s != %s%s", ev[k][0], ev[k][1], dst[k][0], dst[k][1])
+			}
+		}
+	}
 }
