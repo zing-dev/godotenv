@@ -107,6 +107,7 @@ func Read(filenames ...string) (envMap map[string]string, err error) {
 	return
 }
 
+// Show read files and return format string
 func Show(filenames ...string) (str string, err error) {
 	filenames = filenamesOrDefault(filenames)
 	for _, filename := range filenames {
@@ -172,7 +173,10 @@ func Unmarshal(str string) (envMap [][2]string, err error) {
 // If you want more fine-grained control over your command it's recommended
 // that you use `Load()` or `Read()` and the `os/exec` package yourself.
 func Exec(filenames []string, cmd string, cmdArgs []string) error {
-	Load(filenames...)
+	err := Load(filenames...)
+	if err != nil {
+		return err
+	}
 
 	command := exec.Command(cmd, cmdArgs...)
 	command.Stdin = os.Stdin
@@ -182,53 +186,42 @@ func Exec(filenames []string, cmd string, cmdArgs []string) error {
 }
 
 // Write serializes the given environment and writes it to a file
-func Write(envMap [][2]string, filename string) error {
-	content, err := Marshal(envMap)
+func Write(ev [][2]string, filename string) error {
+	content, err := Marshal(ev)
 	if err != nil {
 		return err
 	}
-	return write(strings.Split(content, "\n"), filename)
+	return write(content, filename)
 }
 
-// WriteSlice serializes the given environment and writes it to a file
-func WriteSlice(envSlice [][2]string, filename string) error {
-	lines := make([]string, 0, len(envSlice))
-	max := 0
-	for k := range envSlice {
-		if max < len(envSlice[k][0]) {
-			max = len(envSlice[k][0])
-		}
-	}
-	for _, v := range envSlice {
-		lines = append(lines, KVFormat(v[0], v[1], byte(max)))
-	}
-	return write(lines, filename)
-}
-
-func write(lines []string, filename string) error {
+// inner write
+func write(content, filename string) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	_, err = file.WriteString(strings.Join(lines, "\n") + "\n")
+	defer func(file *os.File) {
+		_ = file.Close()
+	}(file)
+	_, err = file.WriteString(content + "\n")
 	if err != nil {
 		return err
 	}
-	file.Sync()
-	return err
+	return file.Sync()
 }
 
 // Marshal outputs the given environment as a dotenv-formatted environment file.
 // Each line is in the format: KEY="VALUE" where VALUE is backslash-escaped.
-func Marshal(envMap [][2]string) (string, error) {
-	lines := make([]string, 0, len(envMap))
-	for _, v := range envMap {
-		if d, err := strconv.Atoi(v[1]); err == nil {
-			lines = append(lines, fmt.Sprintf(`%s=%d`, v[0], d))
-		} else {
-			lines = append(lines, fmt.Sprintf(`%s="%s"`, v[0], doubleQuoteEscape(v[1])))
+func Marshal(ev [][2]string) (string, error) {
+	lines := make([]string, 0, len(ev))
+	max := 0
+	for k := range ev {
+		if max < len(ev[k][0]) {
+			max = len(ev[k][0])
 		}
+	}
+	for _, v := range ev {
+		lines = append(lines, KVFormat(v[0], v[1], byte(max)))
 	}
 	return strings.Join(lines, "\n"), nil
 }
@@ -255,7 +248,10 @@ func loadFile(filename string, overload bool) error {
 
 	for _, value := range envMap {
 		if !currentEnv[value[0]] || overload {
-			os.Setenv(value[0], value[1])
+			err := os.Setenv(value[0], value[1])
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -267,7 +263,9 @@ func readFile(filename string) (envMap [][2]string, err error) {
 	if err != nil {
 		return
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		_ = file.Close()
+	}(file)
 
 	return Parse(file)
 }
@@ -378,19 +376,19 @@ func parseValue(value string, envMap map[string]string) string {
 	return value
 }
 
-var expandVarRegex = regexp.MustCompile(`(\\)?(\$)(\()?\{?([A-Z0-9_]+)?\}?`)
+var expandVarRegex = regexp.MustCompile(`(\\)?(\$)(\()?{?([A-Z0-9_]+)?}?`)
 
 func expandVariables(v string, m map[string]string) string {
 	return expandVarRegex.ReplaceAllStringFunc(v, func(s string) string {
-		submatch := expandVarRegex.FindStringSubmatch(s)
+		sub := expandVarRegex.FindStringSubmatch(s)
 
-		if submatch == nil {
+		if sub == nil {
 			return s
 		}
-		if submatch[1] == "\\" || submatch[2] == "(" {
-			return submatch[0][1:]
-		} else if submatch[4] != "" {
-			return m[submatch[4]]
+		if sub[1] == "\\" || sub[2] == "(" {
+			return sub[0][1:]
+		} else if sub[4] != "" {
+			return m[sub[4]]
 		}
 		return s
 	})

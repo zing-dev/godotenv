@@ -477,3 +477,31 @@ func TestRoundtrip(t *testing.T) {
 
 	}
 }
+
+func TestWriteIntoFile(t *testing.T) {
+	err := Write([][2]string{
+		{"k1", "v1"},
+		{"k2", "v2"},
+		{"k3", "v3"},
+		{"k3", "v3"},
+		{"username", "zing-dev"},
+		{"password", "1234567890"},
+		{"db.dialect", "MySQL"},
+		{"db.name", "system"},
+		{"db.host", "127.0.0.1"},
+		{"db.user", "root"},
+		{"db.password", "secret"},
+		{"db.port", "3306"},
+	}, "./fixtures/write"+FileName)
+	if err != nil {
+		t.Fatalf("write err: %s", err)
+	}
+}
+
+func TestShow(t *testing.T) {
+	str, err := Show("./fixtures/write" + FileName)
+	if err != nil {
+		t.Fatalf("show err: %s", err)
+	}
+	fmt.Println(str)
+}
